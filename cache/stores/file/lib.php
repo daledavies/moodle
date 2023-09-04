@@ -41,6 +41,16 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
         cache_is_lockable {
 
     /**
+     * Value to represent use of the PHP serializer.
+     */
+    public const SERIALIZER_PHP = 'php';
+
+    /**
+     * Value to represent use of the Igbinary serializer.
+     */
+    public const SERIALIZER_IGBINARY = 'igbinary';
+
+    /**
      * The name of the store.
      * @var string
      */
@@ -147,6 +157,37 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
     protected $locks = [];
 
     /**
+     * Serializer for this store.
+     *
+     * @var int
+     */
+    protected $serializer = self::SERIALIZER_PHP;
+
+    /**
+     * Determine if igbinary functions are available for use.
+     *
+     * @return boolean
+     */
+    public static function igbinary_available(): bool {
+        return function_exists('igbinary_serialize');
+    }
+
+    /**
+     * Gets an array of options to use as the serialiser.
+     *
+     * @return array
+     */
+    public static function config_get_serializer_options(): array {
+        $options = [
+            self::SERIALIZER_PHP => get_string('serializer_php', 'cachestore_file'),
+        ];
+        if (self::igbinary_available()) {
+            $options[self::SERIALIZER_IGBINARY] = get_string('serializer_igbinary', 'cachestore_file');
+        }
+        return $options;
+    }
+
+    /**
      * Constructs the store instance.
      *
      * Noting that this function is not an initialisation. It is used to prepare the store for use.
@@ -225,6 +266,11 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
         if (!$this->lockfactory->is_available()) {
             // File locking is disabled in config, fall back to default lock factory.
             $this->lockfactory = \core\lock\lock_config::get_lock_factory('cachestore_file');
+        }
+
+        // Set the serializer to use based on configuration.
+        if (array_key_exists('serializer', $configuration)) {
+            $this->serializer = (int)$configuration['serializer'];
         }
     }
 
@@ -550,7 +596,7 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
      * @return string
      */
     protected function prep_data_before_save($data) {
-        return serialize($data);
+        return $this->serialize($data);
     }
 
     /**
@@ -561,8 +607,8 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
      * @return mixed
      */
     protected function prep_data_after_read($data, $path) {
-        $result = @unserialize($data);
-        if ($result === false && $data != serialize(false)) {
+        $result = @$this->unserialize($data);
+        if ($result === false && $data != @$this->serialize(false)) {
             debugging('Failed to unserialise data from cache file: ' . $path . '. Data: ' . $data, DEBUG_DEVELOPER);
             return false;
         }
@@ -721,6 +767,9 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
         if (isset($data->lockwait)) {
             $config['lockwait'] = $data->lockwait;
         }
+        if (isset($data->serializer)) {
+            $config['serializer'] = $data->serializer;
+        }
 
         return $config;
     }
@@ -750,6 +799,9 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
         }
         if (isset($config['lockwait'])) {
             $data['lockwait'] = (int)$config['lockwait'];
+        }
+        if (isset($config['serializer'])) {
+            $data['serializer'] = (int)$config['serializer'];
         }
         $editform->set_data($data);
     }
@@ -1038,5 +1090,43 @@ class cachestore_file extends cache_store implements cache_is_key_aware, cache_i
             unset($this->locks[$key]);
         }
         return $unlocked;
+    }
+
+    /**
+     * Serializes the data according to the configured serializer.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    protected function serialize($value): string {
+        switch ($this->serializer) {
+            case self::SERIALIZER_PHP:
+                return serialize($value);
+            case self::SERIALIZER_IGBINARY:
+                if (self::igbinary_available()) {
+                    return igbinary_serialize($value);
+                }
+        }
+        debugging("Unknown or unavailable serializer {$this->serializer}");
+        return serialize($value);
+    }
+
+    /**
+     * Unserializes the data according to the configured serializer.
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    protected function unserialize($value) {
+        switch ($this->serializer) {
+            case self::SERIALIZER_PHP:
+                return unserialize($value);
+            case self::SERIALIZER_IGBINARY:
+                if (self::igbinary_available()) {
+                    return igbinary_unserialize($value);
+                }
+        }
+        debugging("Unknown or unavailable serializer: {$this->serializer}");
+        return unserialize($value);
     }
 }
