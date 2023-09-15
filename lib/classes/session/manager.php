@@ -149,7 +149,7 @@ class manager {
      *                           and the session will be read-only.
      */
     private static function start_session(bool $requireslock) {
-        global $PERF, $CFG;
+        global $PERF, $CFG, $SESSION;
 
         try {
             self::$handler->init();
@@ -188,8 +188,9 @@ class manager {
             // as the main storage of data and put references to $_SESSION.
             $GLOBALS['USER'] = $_SESSION['USER'];
             $_SESSION['USER'] =& $GLOBALS['USER'];
-            $GLOBALS['SESSION'] = $_SESSION['SESSION'];
-            $_SESSION['SESSION'] =& $GLOBALS['SESSION'];
+            require_once($CFG->libdir.'/sessionlib.php');
+            $SESSION = new \session($_SESSION['SESSION']);
+            $_SESSION['SESSION'] =& $GLOBALS['SESSION']->sessionvars;
 
         } catch (\Exception $ex) {
             self::init_empty_session();

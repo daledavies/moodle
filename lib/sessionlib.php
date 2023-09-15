@@ -167,3 +167,52 @@ function get_moodle_cookie() {
         return $username;
     }
 }
+
+class session {
+    private stdClass $__sessionvars;
+
+    public function __construct(object $vars) {
+        $this->__sessionvars = new stdClass();
+        foreach (get_object_vars($vars) as $property => $value) {
+            $this->__sessionvars->$property = $value;
+        }
+    }
+
+    public function __set($property, $value) {
+        if ($property === 'sessionvars') {
+            // Should probably throw an error here.
+            return;
+        }
+        if ($this->read_only_check()) {
+            return;
+        }
+        $this->__sessionvars->$property = $value;
+    }
+
+    public function &__get($name) {
+        if ($name === 'sessionvars') {
+            return $this->__sessionvars;
+        }
+        return $this->__sessionvars->$name;
+    }
+
+    public function __isset($name) {
+        return isset($this->__sessionvars->$name);
+    }
+
+    public function __unset($name) {
+        if ($this->read_only_check()) {
+            return;
+        }
+        unset($this->__sessionvars->$name);
+    }
+
+    private function read_only_check() {
+        // is there ary way we can see the call stack here to find out the code that tried to change the var?
+        if (defined('READ_ONLY_SESSION') && READ_ONLY_SESSION) {
+            $backtrace = debug_backtrace();
+            $caller = end($backtrace);
+            error_log("READ_ONLY_SESSION is defined but the session was manipulated here... {$caller['file']}: line {$caller['line']}");
+        }
+    }
+}
